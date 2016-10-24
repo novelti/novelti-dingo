@@ -1,3 +1,4 @@
 TODO
 
 - Remove output messages when using PyCurl.
+- Add more contextual information during ingestion.

@@ -206,7 +206,7 @@ def processRT(args, start_date=None):
             # Check if we can start ingesting from this date
             if not ready_to_ingest:
                 if first_ingested_date is None:
-                    first_ingested_date = date_str
+                    first_ingested_date = timestamp
                 if start_date is None:
                     now = datetime.now()
                     ready_to_ingest = (now.weekday() == timestamp.weekday() and now.hour == timestamp.hour)

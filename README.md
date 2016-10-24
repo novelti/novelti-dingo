@@ -44,7 +44,7 @@ This section, describes how to use DINGO.
 
 * **Python version** DINGO is designed to run using **Python 3.5**. 
 This means that versions lower than 3.5 are not supported. 
-* **Dependencies** DINGNO uses [libCurl](https://curl.haxx.se/libcurl).
+* **Dependencies** DINGO uses [libCurl](https://curl.haxx.se/libcurl).
 We support two different Curl installations: those accessible through the 
 command line and PyCurl. DINGO will look for PyCurl installations 
 in your system. If no installation is found, it will use the command 
@@ -179,4 +179,8 @@ And execute any of them:
 ```
 python3 dingo.py --config_file=config.json --dataset=example2
 ```
+
+# Troubleshooting
+DINGO comes with a `logging.conf` file, be sure to have this file in the
+same folder `dingo.py` is allocated.
 
