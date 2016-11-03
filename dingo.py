@@ -33,7 +33,7 @@ import json
 import time
 import subprocess
 
-VERSION = 0.1
+VERSION = 0.2
 
 logging.config.fileConfig('logging.conf')
 logger = logging.getLogger("simple")
@@ -55,7 +55,12 @@ Values of execution modes
 MODE_RT='realtime'
 MODE_BATCH='batch'
 MODE_BOTH='both'
+MODE_EMULATE='emulate'
 
+'''
+Flag to indicate that we are running the emulated mode.
+'''
+RUNNING_EMULATION = False
 
 class ConfigArgs:
     '''
@@ -83,9 +88,14 @@ def ingestRow(args, names, values, timestamp=None):
     observations = {}
     msg = {}
     index = 0
-    for attr in names:
-        observations[attr] = float(values[index])
-        index += 1
+    try:
+        for attr in names:
+            observations[attr] = float(values[index])
+            index += 1
+    except Exception as e:
+        logger.error("Problem when converting parameters from "+ str(values) + ". Ignore this entry.")
+        logger.error(e)
+        return
     msg['event'] = observations
     if timestamp is not None:
         request = base_string % (args.url, args.api_key, json.dumps(observations), timestamp)
@@ -95,6 +105,9 @@ def ingestRow(args, names, values, timestamp=None):
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(request)
     else:
+        if RUNNING_EMULATION:
+            # Emulation is on, simply discard it.
+            return
 
         if PYCURL_AVAILABLE:
             logger.debug(msg)
@@ -161,8 +174,12 @@ def processBatch(args, delta=timedelta(0)):
             ingestRow(args, value_names, row, timestamp.timestamp()*1000)
             time.sleep(args.sleep)
             if counter % 1000 == 0:
-                logger.info("Ingested %d entries." % counter)
+                logger.info("Ingested %d entries. Sleep 300 seconds." % counter)
+                time.sleep(300)
             counter += 1
+            if args.max_entries != -1 and counter >= args.max_entries:
+                logger.info("Maximum number of entries %d reached. We stop batch ingestion here." % counter)
+                break
         logger.info("The last timestamp ingested in batch was %s" % latest_ingested_date)
 
 
@@ -231,6 +248,7 @@ def processRT(args, start_date=None):
             processed_lines += 1
             if processed_lines % 500 == 0:
                 logger.info("Processed: %d, discarded: %d" % (processed_lines, discarded_lines))
+    logger.info("A total number of %d observations were processed.")
     return ready_to_ingest, first_ingested_date
 
 
@@ -262,6 +280,8 @@ def processBoth(args):
         # Store the closest date in the past
         closest_date = None
         smallest_delta = timedelta(1000)
+        numlines = 0
+        found_dates = 0
         for line in csv_reader:
             ingest_date = datetime.strptime(line[date_index], args.date_format)
             delta_time = current_date-ingest_date
@@ -273,10 +293,15 @@ def processBoth(args):
                     smallest_delta = delta_time
                     closest_date = ingest_date
                     logger.debug("Update update closest_date with %s" % closest_date)
+                    found_dates += 1
+                    # Remove this break if you want to continue until the last adequate observation is found.
+                    # break
                 else:
                     logger.info('Stop at %s' % line[date_index])
                     break
+            numlines += 1
 
+    logger.info('The batch process will be set to send %d observations' % numlines)
     logger.info('The final selected date is %s' % closest_date)
     logger.info('From %s to %s there are %d days' % (closest_date, current_date, smallest_delta.days))
     logger.info('Add a delta of %s days to every entry' % smallest_delta.days)
@@ -317,6 +342,11 @@ def process(args):
     elif args.mode == MODE_BOTH:
         logger.info('Process %s using both mode' % args.input_file)
         processBoth(args)
+    elif args.mode == MODE_EMULATE:
+        logger.info('Process %s using the emulation mode' % args.input_file)
+        global RUNNING_EMULATION
+        RUNNING_EMULATION = True
+        processBoth(args)
     else:
         logger.error('Not recognized mode %s' % args.mode)
         sys.exit(-1)
@@ -354,7 +384,7 @@ if __name__ == '__main__':
     parser.add_argument('--file', dest="input_file", action='store', required=False,
                         help='CSV file containing the data to be ingested.')
     parser.add_argument('--mode', dest='mode', action='store', required=False, default='batch',
-                        help='The ingestion mode. Three modes are available: batch, realtime or both.')
+                        help='The ingestion mode. Four modes are available: batch, realtime, both and emulate.')
     parser.add_argument('--apikey', dest="api_key", action='store', required=False,
                         help='Remote API key.')
     parser.add_argument('--url', dest='url', action='store', required=False, default='input.novelti.io',
@@ -367,8 +397,10 @@ if __name__ == '__main__':
                         help='Date format indicated in the date column')
     parser.add_argument('--sleep', dest="sleep", action="store", default=0, type=int, required=False,
                         help='Time to sleep between posts in seconds')
+    parser.add_argument('--max_entries', dest="max_entries", action="store", default=-1, type=int, required=False,
+                        help='Maximum number of entries to be considered. For batch ingestion only.')
     parser.add_argument('--dataset', dest='dataset', action='store', default=None, required=False,
-                        help='Indicate the dataset to be used.')
+                        help='Indicate the dataset to be used. Use all to run all the available datasets.')
     parser.add_argument('--config_file', dest='config_file', action='store', default='config.json', required=False,
                         help='JSON file storing the available datasets and its configuration')
     parser.add_argument('--list', dest='list', action='store_true', required=False,
@@ -406,6 +438,9 @@ if __name__ == '__main__':
                 logger.error('Dataset %s not available in %s config file' % (args.dataset, args.config_file))
                 sys.exit(-1)
             # process the dataset
+            if 'max_entries' not in datasets[args.dataset]:
+                # Add default max_entries
+                datasets[args.dataset]['max_entries'] = -1
             process(ConfigArgs(**datasets[args.dataset]))
         else:
            logger.error('Impossible to load configuration file.')
