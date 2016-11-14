@@ -31,6 +31,7 @@ from datetime import datetime
 from datetime import timedelta
 import json
 import time
+import random
 import subprocess
 
 VERSION = 0.2
@@ -133,6 +134,20 @@ def ingestRow(args, names, values, timestamp=None):
 
 
 
+def get_csv_lines(input_file):
+    '''
+    Read a file and return the number of lines.
+    :param input_file: the path of the file to process
+    :return: the number of lines
+    '''
+    logger.info("Count the number of lines for files %s" % input_file)
+    num_lines = 0
+    with open(input_file) as input_file:
+        for line in input_file:
+            num_lines += 1
+    logger.info("We finally found %d lines" % num_lines)
+    return num_lines
+
 
 def processBatch(args, delta=timedelta(0)):
     '''
@@ -201,6 +216,10 @@ def processRT(args, start_date=None):
     else:
         logger.info("Run real time ingestion starting at %s" % start_date)
 
+
+    # get the lenght of the file
+    total_lines = get_csv_lines(args.input_file)
+
     ready_to_ingest = False
     processed_lines = 0
     discarded_lines = 0
@@ -226,7 +245,10 @@ def processRT(args, start_date=None):
                     first_ingested_date = timestamp
                 if start_date is None:
                     now = datetime.now()
-                    ready_to_ingest = (now.weekday() == timestamp.weekday() and now.hour == timestamp.hour)
+                    if not args.random_start:
+                        ready_to_ingest = (now.weekday() == timestamp.weekday() and now.hour == timestamp.hour)
+                    else:
+                        ready_to_ingest = (random.random() < ((processed_lines+1)/float(total_lines)))
                 elif timestamp == start_date:
                     ready_to_ingest = True
                     logger.info("We start the RT ingestion from the indicated date %s" % timestamp)
@@ -243,6 +265,7 @@ def processRT(args, start_date=None):
                 else:
                     # Update the first ingested date
                     first_ingested_date = timestamp
+
                 ingestRow(args, value_names, row)
                 last_time = timestamp
             processed_lines += 1
@@ -403,6 +426,8 @@ if __name__ == '__main__':
                         help='Indicate the dataset to be used. Use all to run all the available datasets.')
     parser.add_argument('--config_file', dest='config_file', action='store', default='config.json', required=False,
                         help='JSON file storing the available datasets and its configuration')
+    parser.add_argument('--random_start', dest='random_start', action='store_true', default=False, required= False,
+                        help='Makes ingestion to start in a random day when using batch ingestion.')
     parser.add_argument('--list', dest='list', action='store_true', required=False,
                         default=False, help='It prints a list of available configurations.')
     parser.add_argument('--version', dest='version', action='store_true', required=False,
@@ -441,6 +466,9 @@ if __name__ == '__main__':
             if 'max_entries' not in datasets[args.dataset]:
                 # Add default max_entries
                 datasets[args.dataset]['max_entries'] = -1
+            if 'random_start' not in datasets[args.dataset]:
+                # Add default value
+                datasets[args.dataset]['random_start'] = False
             process(ConfigArgs(**datasets[args.dataset]))
         else:
            logger.error('Impossible to load configuration file.')
