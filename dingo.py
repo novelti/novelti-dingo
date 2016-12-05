@@ -176,7 +176,12 @@ def processBatch(args, delta=timedelta(0)):
         for row in csv_reader:
             logger.debug(row)
             date_str = row.pop(date_index)
-            original_timestamp = datetime.strptime(date_str, args.date_format)
+
+            if args.epochMilli : 
+                original_timestamp = datetime.utcfromtimestamp(int(date_str)/1000)
+            else :
+                original_timestamp = datetime.strptime(date_str, args.date_format)
+
             timestamp = original_timestamp + delta
             if timestamp >= datetime.now():
                 logger.info("We pass current time with %s. We stop here." % timestamp)
@@ -238,7 +243,12 @@ def processRT(args, start_date=None):
         first_ingested_date = None
         for row in csv_reader:
             date_str = row.pop(date_index)
-            timestamp = datetime.strptime(date_str, args.date_format)
+
+            if args.epochMilli : 
+                timestamp = datetime.utcfromtimestamp(int(date_str)/1000)
+            else :
+                timestamp = datetime.strptime(date_str, args.date_format)
+
             # Check if we can start ingesting from this date
             if not ready_to_ingest:
                 if first_ingested_date is None:
@@ -306,7 +316,11 @@ def processBoth(args):
         numlines = 0
         found_dates = 0
         for line in csv_reader:
-            ingest_date = datetime.strptime(line[date_index], args.date_format)
+            if args.epochMilli : 
+                ingest_date = datetime.utcfromtimestamp(int(line[date_index])/1000)
+            else :
+                ingest_date = datetime.strptime(line[date_index], args.date_format)
+
             delta_time = current_date-ingest_date
             if ingest_date.weekday() == current_date.weekday()\
                 and ingest_date.hour <= current_date.hour\
@@ -430,6 +444,8 @@ if __name__ == '__main__':
                         help='Makes ingestion to start in a random day when using batch ingestion.')
     parser.add_argument('--list', dest='list', action='store_true', required=False,
                         default=False, help='It prints a list of available configurations.')
+    parser.add_argument('--epochMilli', dest='epochMilli', action='store_true', required=False,
+                    default=False, help='Accept Milliseconds time, ignore date format.')
     parser.add_argument('--version', dest='version', action='store_true', required=False,
                         default=False, help='Print the current version')
 
